@@ -109,7 +109,7 @@ def main(cfg: OmegaConf):
 			"MlpPolicy",
 			env,
 			learning_rate=cfg.train.actor_lr,
-			buffer_size=10000000,      # Replay buffer size
+			buffer_size=cfg.train.buffer_size,      # Replay buffer size
 			learning_starts=1,    # How many steps before learning starts (total steps for all env combined)
 			batch_size=cfg.train.batch_size,
 			tau=cfg.train.tau,                # Target network update rate
@@ -175,7 +175,7 @@ def main(cfg: OmegaConf):
 	callbacks = [checkpoint_callback, logging_callback]
 	# Train the agent
 	model.learn(
-		total_timesteps=20000000,
+		total_timesteps=cfg.total_timesteps,
 		callback = callbacks
 	)
 

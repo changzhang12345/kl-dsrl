@@ -25,14 +25,15 @@ act_steps: 4 # action chunk size of base policy
 load_offline_data: False # if true, load offline demonstration data into replay buffer
 deterministic_eval: False # if true, run eval with both deterministic actions, as well as stochastic
 
+total_timesteps: 1000000
 eval_interval: 3000
-num_evals: 200
+num_evals: 5
 save_model_interval: 10000
 save_replay_buffer: False
 
 env:
   n_envs:  4
-  n_eval_envs: 25
+  n_eval_envs: 1
   name: ${env_name}
   max_episode_steps: 300
   reset_at_iteration: False
@@ -60,6 +61,7 @@ wandb:
 train:
   tau: 0.005 # Target update rate
   actor_lr: 3e-4
+  buffer_size: 2000000 # Replay buffer size
   batch_size: 256
   train_freq: 1 # Update model after this many environment steps
   utd: 20 # Number of gradient steps to take per update
