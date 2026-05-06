@@ -55,7 +55,13 @@ def main(cfg: OmegaConf):
             env = gym.make(cfg.env_name)
             env = ObservationWrapperGym(env, cfg.normalization_path)
         elif cfg.env_name in ['lift', 'can', 'square', 'transport']:
-            env = make_robomimic_env(env=cfg.env_name, normalization_path=cfg.normalization_path, low_dim_keys=cfg.env.wrappers.robomimic_lowdim.low_dim_keys, dppo_path=cfg.dppo_path)
+            env = make_robomimic_env(
+                env=cfg.env_name,
+                normalization_path=cfg.normalization_path,
+                low_dim_keys=cfg.env.wrappers.robomimic_lowdim.low_dim_keys,
+                dppo_path=cfg.dppo_path,
+                reward_shaping=cfg.env.get("reward_shaping", False),
+            )
             env = ObservationWrapperRobomimic(env, reward_offset=cfg.env.reward_offset)
         env = ActionChunkWrapper(env, cfg, max_episode_steps=cfg.env.max_episode_steps)
         return env

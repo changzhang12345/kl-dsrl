@@ -65,6 +65,20 @@ class LoggingCallback(BaseCallback):
 		self.max_steps = max_steps
 		self.deterministic_eval = deterministic_eval
 
+	def _success_from_infos_or_rewards(self, infos, rewards):
+		success = np.zeros(len(rewards), dtype=bool)
+		found_success_info = False
+		for idx, info in enumerate(infos):
+			if "is_success" in info:
+				success[idx] = bool(info["is_success"])
+				found_success_info = True
+			elif "success" in info:
+				success[idx] = bool(info["success"])
+				found_success_info = True
+		if found_success_info:
+			return success
+		return rewards > -self.rew_offset
+
 	def _on_step(self):
 		for info in self.locals['infos']:
 			if 'episode' in info:
@@ -72,7 +86,7 @@ class LoggingCallback(BaseCallback):
 				self.episode_lengths.append(info['episode']['l'])
 		rew = self.locals['rewards']
 		self.total_reward += np.mean(rew)
-		self.episode_success[rew > -self.rew_offset] = 1
+		self.episode_success[self._success_from_infos_or_rewards(self.locals['infos'], rew)] = 1
 		self.episode_completed[self.locals['dones']] = 1
 		self.total_timesteps += self.action_chunk * self.model.n_envs
 		if self.n_calls % self.log_freq == 0:
@@ -95,9 +109,12 @@ class LoggingCallback(BaseCallback):
 							"train/success_rate": np.sum(self.episode_success) / np.sum(self.episode_completed),
 						}, step=self.log_count)
 					if self.algorithm == 'dsrl_na':
-						wandb.log({
+						log_data = {
 							"train/noise_critic_loss": self.locals['self'].logger.name_to_value['train/noise_critic_loss'],
-						}, step=self.log_count)
+						}
+						if 'train/kl_loss' in self.locals['self'].logger.name_to_value:
+							log_data["train/kl_loss"] = self.locals['self'].logger.name_to_value['train/kl_loss']
+						wandb.log(log_data, step=self.log_count)
 				self.episode_rewards = []
 				self.episode_lengths = []
 				self.total_reward = 0
@@ -132,7 +149,7 @@ class LoggingCallback(BaseCallback):
 						rew_total += sum(rew_ep[done])
 						rew_ep[done] = 0 
 						total_ep += np.sum(done)
-						success_i[reward > -self.rew_offset] = 1
+						success_i[self._success_from_infos_or_rewards(info, reward)] = 1
 						r.append(reward)
 					success.append(success_i.mean())
 					rews.append(np.mean(np.array(r)))

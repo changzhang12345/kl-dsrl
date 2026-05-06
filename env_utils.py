@@ -15,7 +15,25 @@ import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
 
 
-def make_robomimic_env(render=False, env='square', normalization_path=None, low_dim_keys=None, dppo_path=None):
+def _get_env_success(env):
+	current_env = env
+	while current_env is not None:
+		if hasattr(current_env, "is_success"):
+			return bool(current_env.is_success())
+		if hasattr(current_env, "_check_success"):
+			return bool(current_env._check_success())
+		current_env = getattr(current_env, "env", None)
+	return None
+
+
+def make_robomimic_env(
+	render=False,
+	env='square',
+	normalization_path=None,
+	low_dim_keys=None,
+	dppo_path=None,
+	reward_shaping=False,
+):
 	wrappers = OmegaConf.create({
 		'robomimic_lowdim': {
 			'normalization_path': normalization_path,
@@ -40,7 +58,7 @@ def make_robomimic_env(render=False, env='square', normalization_path=None, low_
 	robomimic_env_cfg_path = f'{dppo_path}/cfg/robomimic/env_meta/{env}.json'
 	with open(robomimic_env_cfg_path, "r") as f:
 		env_meta = json.load(f)
-	env_meta["reward_shaping"] = False
+	env_meta["reward_shaping"] = reward_shaping
 	env = EnvUtils.create_env_from_metadata(
 		env_meta=env_meta,
 		render=False,
@@ -81,6 +99,9 @@ class ObservationWrapperRobomimic(gym.Env):
 
 	def step(self, action):
 		raw_obs, reward, done, info = self.env.step(action)
+		success = _get_env_success(self.env)
+		if success is not None:
+			info["is_success"] = success
 		reward = (reward - self.reward_offset)
 		obs = raw_obs['state'].flatten()
 		return obs, reward, done, info
@@ -177,6 +198,9 @@ class ActionChunkWrapper(gymnasium.Env):
 		reward = sum(reward_)
 		done = np.max(done_)
 		info = info_[-1]
+		successes = [info_i["is_success"] for info_i in info_ if "is_success" in info_i]
+		if successes:
+			info["is_success"] = bool(np.any(successes))
 		if self.count >= self.max_episode_steps:
 			done = True
 		if done:

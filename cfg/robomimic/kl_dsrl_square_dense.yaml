@@ -1,0 +1,13 @@
+defaults:
+  - kl_dsrl_square
+  - _self_
+
+name: robomimic_square_kl_dsrl_dense_${now:%Y-%m-%d}_${now:%H-%M-%S}_${seed}
+logdir: ${log_dir}/robomimic-kl-dsrl-dense/${name}/${now:%Y-%m-%d}_${now:%H-%M-%S}_${seed}
+
+env:
+  reward_shaping: True
+  reward_offset: 0
+
+wandb:
+  group: robomimic-square-kl-dense
