@@ -164,9 +164,12 @@ def main(cfg: OmegaConf):
     logging_callback.log_count += 1
 
     if resume_path:
-        # Checkpoints carry no replay buffer: refill it with the resumed policy before updating.
-        warmup_steps = cfg.get("resume_warmup_steps", cfg.train.init_rollout_steps)
-        collect_policy_rollouts(model, env, warmup_steps)
+        if cfg.get("resume_replay_buffer", None):
+            model.load_replay_buffer(cfg.resume_replay_buffer)
+        else:
+            # No saved buffer: refill it with the resumed policy before updating.
+            warmup_steps = cfg.get("resume_warmup_steps", cfg.train.init_rollout_steps)
+            collect_policy_rollouts(model, env, warmup_steps)
         logging_callback.set_timesteps(model.num_timesteps * cfg.act_steps)
     else:
         if cfg.load_offline_data:
@@ -185,6 +188,8 @@ def main(cfg: OmegaConf):
 
     if len(cfg.name) > 0:
         model.save(cfg.logdir + "/checkpoint/final")
+        if cfg.get("save_final_replay_buffer", False):
+            model.save_replay_buffer(cfg.logdir + "/checkpoint/final_replay_buffer")
 
     env.close()
     if cfg.use_wandb:
