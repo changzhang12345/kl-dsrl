@@ -18,7 +18,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from env_utils import DiffusionPolicyEnvWrapper, ObservationWrapperRobomimic, ObservationWrapperGym, ActionChunkWrapper, make_robomimic_env
-from utils import load_base_policy, load_offline_data, collect_rollouts, LoggingCallback
+from utils import load_base_policy, load_offline_data, collect_rollouts, collect_policy_rollouts, LoggingCallback
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 OmegaConf.register_new_resolver("round_up", math.ceil)
@@ -85,33 +85,51 @@ def main(cfg: OmegaConf):
         n_critics=cfg.train.n_critics,
     )
 
-    model = KLDSRL(
-        "MlpPolicy",
-        env,
-        learning_rate=cfg.train.actor_lr,
-        buffer_size=cfg.train.buffer_size,
-        learning_starts=1,
-        batch_size=cfg.train.batch_size,
-        tau=cfg.train.tau,
-        gamma=cfg.train.discount,
-        train_freq=cfg.train.train_freq,
-        gradient_steps=cfg.train.utd,
-        action_noise=None,
-        optimize_memory_usage=False,
-        ent_coef="auto" if cfg.train.ent_coef == -1 else cfg.train.ent_coef,
-        target_update_interval=1,
-        target_entropy="auto" if cfg.train.target_ent == -1 else cfg.train.target_ent,
-        use_sde=False,
-        sde_sample_freq=-1,
-        tensorboard_log=cfg.logdir,
-        verbose=1,
-        policy_kwargs=policy_kwargs,
-        diffusion_policy=base_policy,
-        diffusion_act_dim=(cfg.act_steps, cfg.action_dim),
-        noise_critic_grad_steps=cfg.train.noise_critic_grad_steps,
-        critic_backup_combine_type=cfg.train.critic_backup_combine_type,
-        kl_coef=cfg.train.kl_coef,
-    )
+    resume_path = cfg.get("resume_path", None)
+    if resume_path:
+        model = KLDSRL.load(
+            resume_path,
+            env=env,
+            device=cfg.device,
+            tensorboard_log=cfg.logdir,
+            diffusion_policy=base_policy,
+            diffusion_act_dim=(cfg.act_steps, cfg.action_dim),
+        )
+        model.diffusion_policy = base_policy
+        model.diffusion_act_chunk = cfg.act_steps
+        model.diffusion_act_dim = cfg.action_dim
+        assert model.kl_coef == cfg.train.kl_coef, (
+            f"checkpoint kl_coef={model.kl_coef} != train.kl_coef={cfg.train.kl_coef}"
+        )
+        print(f"Resumed from {resume_path} at num_timesteps={model.num_timesteps}")
+    else:
+        model = KLDSRL(
+            "MlpPolicy",
+            env,
+            learning_rate=cfg.train.actor_lr,
+            buffer_size=cfg.train.buffer_size,
+            learning_starts=1,
+            batch_size=cfg.train.batch_size,
+            tau=cfg.train.tau,
+            gamma=cfg.train.discount,
+            train_freq=cfg.train.train_freq,
+            gradient_steps=cfg.train.utd,
+            action_noise=None,
+            optimize_memory_usage=False,
+            ent_coef="auto" if cfg.train.ent_coef == -1 else cfg.train.ent_coef,
+            target_update_interval=1,
+            target_entropy="auto" if cfg.train.target_ent == -1 else cfg.train.target_ent,
+            use_sde=False,
+            sde_sample_freq=-1,
+            tensorboard_log=cfg.logdir,
+            verbose=1,
+            policy_kwargs=policy_kwargs,
+            diffusion_policy=base_policy,
+            diffusion_act_dim=(cfg.act_steps, cfg.action_dim),
+            noise_critic_grad_steps=cfg.train.noise_critic_grad_steps,
+            critic_backup_combine_type=cfg.train.critic_backup_combine_type,
+            kl_coef=cfg.train.kl_coef,
+        )
 
     checkpoint_callback = CheckpointCallback(
         save_freq=cfg.save_model_interval,
@@ -145,16 +163,24 @@ def main(cfg: OmegaConf):
         logging_callback.evaluate(model, deterministic=True)
     logging_callback.log_count += 1
 
-    if cfg.load_offline_data:
-        load_offline_data(model, cfg.offline_data_path, num_env)
-    if cfg.train.init_rollout_steps > 0:
-        collect_rollouts(model, env, cfg.train.init_rollout_steps, base_policy, cfg)
-        logging_callback.set_timesteps(cfg.train.init_rollout_steps * num_env)
+    if resume_path:
+        # Checkpoints carry no replay buffer: refill it with the resumed policy before updating.
+        warmup_steps = cfg.get("resume_warmup_steps", cfg.train.init_rollout_steps)
+        collect_policy_rollouts(model, env, warmup_steps)
+        logging_callback.set_timesteps(model.num_timesteps * cfg.act_steps)
+    else:
+        if cfg.load_offline_data:
+            load_offline_data(model, cfg.offline_data_path, num_env)
+        if cfg.train.init_rollout_steps > 0:
+            collect_rollouts(model, env, cfg.train.init_rollout_steps, base_policy, cfg)
+            logging_callback.set_timesteps(cfg.train.init_rollout_steps * num_env)
 
     callbacks = [checkpoint_callback, logging_callback]
+    # When resuming, total_timesteps is the target overall step count (e.g. 500000 continues 250000 -> 500000).
     model.learn(
-        total_timesteps=cfg.total_timesteps,
+        total_timesteps=cfg.total_timesteps - model.num_timesteps if resume_path else cfg.total_timesteps,
         callback=callbacks,
+        reset_num_timesteps=not resume_path,
     )
 
     if len(cfg.name) > 0:

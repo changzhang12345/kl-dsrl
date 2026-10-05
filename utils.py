@@ -207,6 +207,24 @@ def collect_rollouts(model, env, num_steps, base_policy, cfg):
 	
 
 
+def collect_policy_rollouts(model, env, num_steps):
+	"""Refill an empty replay buffer with the current fine-tuned policy (used when resuming,
+	since checkpoints do not include the replay buffer). No gradient updates are made."""
+	obs = env.reset()
+	for i in range(num_steps):
+		action, _ = model.predict_diffused(obs, deterministic=False)
+		next_obs, reward, done, info = env.step(action)
+		model.replay_buffer.add(
+				obs=obs,
+				next_obs=next_obs,
+				action=action,
+				reward=reward,
+				done=done,
+				infos=info,
+			)
+		obs = next_obs
+
+
 def load_offline_data(model, offline_data_path, n_env):
 	# this function should only be applied with dsrl_na
 	offline_data = np.load(offline_data_path)
