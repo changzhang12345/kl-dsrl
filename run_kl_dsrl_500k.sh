@@ -9,11 +9,11 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH --time=8:00:00
-#SBATCH --array=0-4
+#SBATCH --array=0-14%5
 #SBATCH --output=logs/slurm/kl_dsrl_square_500k_%A_%a.out
 #SBATCH --error=logs/slurm/kl_dsrl_square_500k_%A_%a.err
 
-# Train each β (seed-1) from scratch to TOTAL steps; the final replay buffer is saved
+# Train each β × seed from scratch to TOTAL steps; the final replay buffer is saved
 # alongside final.zip so the run can be resumed later without losing data.
 
 source /apps/software/system/software/miniconda/24.11.3/etc/profile.d/conda.sh
@@ -25,12 +25,15 @@ export LD_LIBRARY_PATH=$MUJOCO_PY_MUJOCO_PATH/bin:$LD_LIBRARY_PATH:/usr/lib/nvid
 
 cd /nfs/roberts/project/pi_tkf6/cz493/dsrl
 
-SEED=1
+# 15 tasks = 5 β × 3 seeds, at most 5 running at once.
 TOTAL=500000
 BETAS=(0 0.1 0.5 1 2)
 TAGS=(0 0p1 0p5 1 2)
-BETA=${BETAS[$SLURM_ARRAY_TASK_ID]}
-TAG=${TAGS[$SLURM_ARRAY_TASK_ID]}
+SEEDS=(1 2 3)
+BETA_IDX=$((SLURM_ARRAY_TASK_ID % 5))
+SEED=${SEEDS[$((SLURM_ARRAY_TASK_ID / 5))]}
+BETA=${BETAS[$BETA_IDX]}
+TAG=${TAGS[$BETA_IDX]}
 
 python train_kl_dsrl.py \
     --config-path=cfg/robomimic \
