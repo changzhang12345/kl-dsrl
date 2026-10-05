@@ -8,7 +8,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH --time=12:00:00
+#SBATCH --time=15:00:00
 #SBATCH --array=0-14%5
 #SBATCH --output=logs/slurm/kl_dsrl_square_500k_%A_%a.out
 #SBATCH --error=logs/slurm/kl_dsrl_square_500k_%A_%a.err
